@@ -44,14 +44,10 @@ fn main() {
 
     let mut canvas = Canvas::new(IMGX, IMGY);
 
-    let half_w = IMGX as i32 / 2;
-    let half_h = IMGY as i32 / 2;
-    for x in -half_w..half_w {
-        for y in -half_h..half_h {
-            let direction = canvas.viewport_direction_at(x, y);
-            let color = trace_ray(&scene, &camera_position, direction, 1., f32::INFINITY);
-            canvas.put_pixel(x, y, color);
-        }
+    for (x, y) in canvas.iter_pixels() {
+        let direction = canvas.viewport_direction_at(x, y);
+        let color = trace_ray(&scene, &camera_position, direction, 1., f32::INFINITY);
+        canvas.put_pixel(x, y, color);
     }
 
     canvas.save();

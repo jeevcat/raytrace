@@ -11,6 +11,43 @@ pub struct Canvas {
     imgbuf: image::ImageBuffer<Color, Vec<<Color as image::Pixel>::Subpixel>>,
 }
 
+pub struct PixelsIterator {
+    half_w: i32,
+    half_h: i32,
+    x: i32,
+    y: i32,
+}
+
+impl PixelsIterator {
+    fn new(canvas: &Canvas) -> Self {
+        let half_w = canvas.imgbuf.width() as i32 / 2;
+        let half_h = canvas.imgbuf.height() as i32 / 2;
+        Self {
+            x: -half_w,
+            y: -half_h,
+            half_w,
+            half_h,
+        }
+    }
+}
+
+impl Iterator for PixelsIterator {
+    type Item = (i32, i32);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.y >= self.half_h {
+            return None;
+        }
+        if self.x >= self.half_w {
+            self.x = -self.half_w;
+            self.y += 1;
+        }
+        let iter = Some((self.x, self.y));
+        self.x += 1;
+        iter
+    }
+}
+
 impl Canvas {
     pub fn new(width: u32, height: u32) -> Self {
         Self {
@@ -39,6 +76,10 @@ impl Canvas {
             y: y as f32 * VH / self.imgbuf.height() as f32,
             z: PROJECTION_PLANE_D,
         }
+    }
+
+    pub fn iter_pixels(&self) -> PixelsIterator {
+        PixelsIterator::new(self)
     }
 
     pub fn save(&self) {
