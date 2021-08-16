@@ -1,3 +1,5 @@
+use std::ops::Range;
+
 use canvas::Color;
 use cgmath::{InnerSpace, Vector3};
 use image::{Pixel, Rgb};
@@ -82,26 +84,25 @@ fn main() {
 
     for (x, y) in canvas.iter_pixels() {
         let direction = canvas.viewport_direction_at(x, y);
-        let color = trace_ray(&scene, &camera_position, direction, 1., f32::INFINITY);
+        let color = trace_ray(&scene, &camera_position, &direction, (1.)..f32::INFINITY);
         canvas.put_pixel(x, y, color);
     }
 
     canvas.save();
 }
 
-fn trace_ray(
-    scene: &Scene,
-    camera_position: &Vector3<f32>,
-    direction: Vector3<f32>,
-    t_min: f32,
-    t_max: f32,
-) -> Color {
+fn closest_intersection<'a>(
+    scene: &'a Scene,
+    source_position: &Vector3<f32>,
+    direction: &Vector3<f32>,
+    t_range: Range<f32>,
+) -> (f32, Option<&'a Sphere>) {
     // TODO: can this be faster?
-    let (closest_t, closest_sphere) = scene
+    scene
         .spheres
         .iter()
         .flat_map(|sphere| {
-            intersect_ray_sphere(camera_position, &direction, sphere)
+            intersect_ray_sphere(source_position, direction, sphere)
                 .iter()
                 .map(|t| (*t, sphere))
                 .collect::<Vec<_>>()
@@ -109,22 +110,33 @@ fn trace_ray(
         .fold(
             (f32::INFINITY, None),
             |(closest_t, closest_sphere), (t, sphere)| {
-                if t > t_min && t < t_max && t < closest_t {
+                if t > t_range.start && t < t_range.end && t < closest_t {
                     return (t, Some(sphere));
                 }
                 (closest_t, closest_sphere)
             },
-        );
+        )
+}
+
+fn trace_ray(
+    scene: &Scene,
+    camera_position: &Vector3<f32>,
+    direction: &Vector3<f32>,
+    t_range: Range<f32>,
+) -> Color {
+    let (closest_t, closest_sphere) =
+        closest_intersection(scene, camera_position, direction, t_range);
 
     match closest_sphere {
         Some(sphere) => {
             let surface_position = camera_position + closest_t * direction;
             let surface_normal = (surface_position - sphere.center).normalize();
+            let surface_to_camera = -*direction;
             let lighting = compute_lighting(
                 scene,
                 &surface_position,
                 &surface_normal,
-                -direction,
+                &surface_to_camera,
                 sphere.specular,
             );
             sphere.color.map(|c| (c as f32 * lighting) as u8)
@@ -160,7 +172,7 @@ fn compute_lighting(
     scene: &Scene,
     surface_position: &Vector3<f32>,
     surface_normal: &Vector3<f32>,
-    surface_to_camera: Vector3<f32>,
+    surface_to_camera: &Vector3<f32>,
     specularity: Option<f32>,
 ) -> f32 {
     scene.lights.iter().fold(0., |acc, l| {
@@ -170,13 +182,14 @@ fn compute_lighting(
                 intensity,
                 position,
             } => {
-                let incident_ray = position - surface_position;
-                diffuse(&incident_ray, surface_normal, *intensity)
-                    + specular(
-                        &incident_ray,
+                intensity
+                    * nonambient(
+                        scene,
+                        surface_position,
+                        &(position - surface_position),
+                        1.,
                         surface_normal,
                         surface_to_camera,
-                        *intensity,
                         specularity,
                     )
             }
@@ -184,12 +197,14 @@ fn compute_lighting(
                 intensity,
                 direction,
             } => {
-                diffuse(direction, surface_normal, *intensity)
-                    + specular(
+                intensity
+                    * nonambient(
+                        scene,
+                        surface_position,
                         direction,
+                        f32::INFINITY,
                         surface_normal,
                         surface_to_camera,
-                        *intensity,
                         specularity,
                     )
             }
@@ -197,10 +212,28 @@ fn compute_lighting(
     })
 }
 
-fn diffuse(incident_ray: &Vector3<f32>, surface_normal: &Vector3<f32>, intensity: f32) -> f32 {
+fn nonambient(
+    scene: &Scene,
+    surface_position: &Vector3<f32>,
+    incident_ray: &Vector3<f32>,
+    t_max: f32,
+    surface_normal: &Vector3<f32>,
+    surface_to_camera: &Vector3<f32>,
+    specularity: Option<f32>,
+) -> f32 {
+    let (_, shadow_sphere) =
+        closest_intersection(scene, surface_position, incident_ray, 0.001..t_max);
+    if shadow_sphere.is_some() {
+        return 0.;
+    }
+    diffuse(incident_ray, surface_normal)
+        + specular(incident_ray, surface_normal, surface_to_camera, specularity)
+}
+
+fn diffuse(incident_ray: &Vector3<f32>, surface_normal: &Vector3<f32>) -> f32 {
     let dot = surface_normal.dot(*incident_ray);
     if dot > 0. {
-        intensity * dot / (surface_normal.magnitude() * incident_ray.magnitude())
+        dot / (surface_normal.magnitude() * incident_ray.magnitude())
     } else {
         0.
     }
@@ -209,17 +242,15 @@ fn diffuse(incident_ray: &Vector3<f32>, surface_normal: &Vector3<f32>, intensity
 fn specular(
     incident_ray: &Vector3<f32>,
     surface_normal: &Vector3<f32>,
-    surface_to_camera: Vector3<f32>,
-    intensity: f32,
+    surface_to_camera: &Vector3<f32>,
     specularity: Option<f32>,
 ) -> f32 {
     if let Some(specularity) = specularity {
         let reflected_ray = 2. * surface_normal * surface_normal.dot(*incident_ray) - incident_ray;
-        let dot = reflected_ray.dot(surface_to_camera);
+        let dot = reflected_ray.dot(*surface_to_camera);
         if dot > 0. {
-            return intensity
-                * (dot / (reflected_ray.magnitude() * surface_to_camera.magnitude()))
-                    .powf(specularity);
+            return (dot / (reflected_ray.magnitude() * surface_to_camera.magnitude()))
+                .powf(specularity);
         }
     }
     0.
