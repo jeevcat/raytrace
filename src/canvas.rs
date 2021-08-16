@@ -3,7 +3,7 @@ use image::Rgb;
 
 pub type Color = Rgb<u8>;
 
-const VW: f32 = 1.;
+const VW: f32 = 1.78;
 const VH: f32 = 1.;
 const PROJECTION_PLANE_D: f32 = 1.;
 
@@ -33,7 +33,7 @@ impl Canvas {
         self.imgbuf.put_pixel(screen_x, screen_y, pixel)
     }
 
-    pub fn canvas_to_viewport(&self, x: i32, y: i32) -> Vector3<f32> {
+    pub fn viewport_direction_at(&self, x: i32, y: i32) -> Vector3<f32> {
         Vector3 {
             x: x as f32 * VW / self.imgbuf.width() as f32,
             y: y as f32 * VH / self.imgbuf.height() as f32,

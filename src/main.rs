@@ -4,8 +4,8 @@ use image::Rgb;
 
 use crate::canvas::Canvas;
 
-const IMGX: u32 = 800;
-const IMGY: u32 = 800;
+const IMGX: u32 = 1920;
+const IMGY: u32 = 1080;
 const BACKGROUND_COLOR: Color = Rgb([255, 255, 255]);
 
 mod canvas;
@@ -20,7 +20,7 @@ struct Scene {
 }
 
 fn main() {
-    let o = Vector3::new(0., 0., 0.);
+    let camera_position = Vector3::new(0., 0., 0.);
 
     let scene = Scene {
         spheres: vec![
@@ -35,7 +35,7 @@ fn main() {
                 color: Rgb([0, 0, 255]), // Blue
             },
             Sphere {
-                center: Vector3::new(-2.,0.,4.),
+                center: Vector3::new(-2., 0., 4.),
                 radius: 1.,
                 color: Rgb([0, 255, 0]), // Green
             },
@@ -48,8 +48,8 @@ fn main() {
     let half_h = IMGY as i32 / 2;
     for x in -half_w..half_w {
         for y in -half_h..half_h {
-            let d = canvas.canvas_to_viewport(x, y);
-            let color = trace_ray(&scene, &o, d, 1., f32::INFINITY);
+            let direction = canvas.viewport_direction_at(x, y);
+            let color = trace_ray(&scene, &camera_position, direction, 1., f32::INFINITY);
             canvas.put_pixel(x, y, color);
         }
     }
@@ -57,11 +57,17 @@ fn main() {
     canvas.save();
 }
 
-fn trace_ray(scene: &Scene, o: &Vector3<f32>, d: Vector3<f32>, t_min: f32, t_max: f32) -> Color {
+fn trace_ray(
+    scene: &Scene,
+    camera_position: &Vector3<f32>,
+    direction: Vector3<f32>,
+    t_min: f32,
+    t_max: f32,
+) -> Color {
     let (_, closest_sphere) = scene.spheres.iter().fold(
         (f32::INFINITY, None),
         |(closest_t, closest_sphere), sphere| {
-            let (t1, t2) = intersect_ray_sphere(o, &d, sphere);
+            let (t1, t2) = intersect_ray_sphere(camera_position, &direction, sphere);
             if t1 > t_min && t1 < t_max && t1 < closest_t {
                 return (t1, Some(sphere));
             }
@@ -78,11 +84,15 @@ fn trace_ray(scene: &Scene, o: &Vector3<f32>, d: Vector3<f32>, t_min: f32, t_max
     }
 }
 
-fn intersect_ray_sphere(o: &Vector3<f32>, d: &Vector3<f32>, sphere: &Sphere) -> (f32, f32) {
-    let ray = o - sphere.center;
+fn intersect_ray_sphere(
+    camera_position: &Vector3<f32>,
+    direction: &Vector3<f32>,
+    sphere: &Sphere,
+) -> (f32, f32) {
+    let ray = camera_position - sphere.center;
 
-    let a_coef = d.magnitude2();
-    let b_coef = 2. * ray.dot(*d);
+    let a_coef = direction.magnitude2();
+    let b_coef = 2. * ray.dot(*direction);
     let c_coef = ray.magnitude2() - sphere.radius * sphere.radius;
 
     let discriminant = b_coef * b_coef - 4. * a_coef * c_coef;
